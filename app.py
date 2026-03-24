@@ -1,21 +1,23 @@
+import os
 import asyncio
-from flask import Flask, request
 import asyncpg
 import json
-import os
+from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-app = Flask(__name__)
-
-DATABASE_URL = "postgresql://postgres:ZikoBoss200@db.zxkvqyaidsszmufykwmr.supabase.co:5432/postgres"
+# ===== التكوين =====
 TOKEN = "8680331502:AAFGdzSKemmYtMtsZplXbGEQcTqijxuOv8I"
+DATABASE_URL = "postgresql://postgres:ZikoBoss200@db.zxkvqyaidsszmufykwmr.supabase.co:5432/postgres?sslmode=require"
+# ⚠️ تأكد من استخدام Session Pooler (منفذ 5432) وليس Direct connection.
+# ===================
 
+app = Flask(__name__)
 bot = Bot(TOKEN)
 application = None
 pool = None
 
-# دوال قاعدة البيانات (بنفس الكود السابق)
+# ---------- دوال قاعدة البيانات ----------
 async def get_pool():
     return await asyncpg.create_pool(DATABASE_URL)
 
@@ -37,7 +39,7 @@ async def wait_for_result(pool, task_id, timeout=60):
         await asyncio.sleep(2)
     return "⏰ انتهى وقت الانتظار."
 
-# معالجات الأوامر (نفسها)
+# ---------- معالجات الأوامر ----------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎮 بوت Free Fire القائد\nأرسل:\n/info UID\n/outfit UID\n/check UID")
 
@@ -75,7 +77,7 @@ async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await wait_for_result(pool, task_id)
     await update.message.reply_text(result)
 
-# إعداد webhook
+# ---------- إعداد webhook ----------
 async def setup_webhook():
     global application, pool
     pool = await get_pool()
@@ -86,11 +88,13 @@ async def setup_webhook():
     application.add_handler(CommandHandler("check", cmd_check))
     await application.initialize()
     await application.start()
-    # تعيين webhook إلى عنوان Render الخاص بك
-    webhook_url = "https://bot-comond-1.onrender.com/webhook"
+    # احصل على اسم المضيف من متغير البيئة RENDER_EXTERNAL_URL (إذا كان موجودًا)
+    base_url = os.environ.get("RENDER_EXTERNAL_URL", "https://bot-comond-1.onrender.com")
+    webhook_url = f"{base_url}/webhook"
     await application.bot.set_webhook(webhook_url)
-    print("✅ Webhook set")
+    print(f"✅ Webhook set to {webhook_url}")
 
+# ---------- نقطة دخول Flask ----------
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
