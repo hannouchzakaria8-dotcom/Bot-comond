@@ -8,8 +8,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ===== التكوين =====
 TOKEN = "8680331502:AAFGdzSKemmYtMtsZplXbGEQcTqijxuOv8I"
-DATABASE_URL = "postgresql://postgres:ZikoBoss200@db.zxkvqyaidsszmufykwmr.supabase.co:5432/postgres?sslmode=require"
-# ⚠️ تأكد من استخدام Session Pooler (منفذ 5432) وليس Direct connection.
+# أضف &family=AF_INET لفرض استخدام IPv4
+DATABASE_URL = "postgresql://postgres:ZikoBoss200@db.zxkvqyaidsszmufykwmr.supabase.co:5432/postgres?sslmode=require&family=AF_INET"
 # ===================
 
 app = Flask(__name__)
@@ -19,7 +19,15 @@ pool = None
 
 # ---------- دوال قاعدة البيانات ----------
 async def get_pool():
-    return await asyncpg.create_pool(DATABASE_URL)
+    # إعادة محاولة الاتصال إذا فشل
+    for attempt in range(5):
+        try:
+            return await asyncpg.create_pool(DATABASE_URL)
+        except Exception as e:
+            print(f"محاولة {attempt+1} فشلت: {e}")
+            if attempt == 4:
+                raise
+            await asyncio.sleep(3)
 
 async def create_task(pool, task_type, user_id, chat_id, parameters):
     async with pool.acquire() as conn:
@@ -41,39 +49,47 @@ async def wait_for_result(pool, task_id, timeout=60):
 
 # ---------- معالجات الأوامر ----------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🎮 بوت Free Fire القائد\nأرسل:\n/info UID\n/outfit UID\n/check UID")
+    await update.message.reply_text(
+        "🎮 *بوت Free Fire القائد*\n\n"
+        "الأوامر المتاحة:\n"
+        "`/info UID` - معلومات اللاعب\n"
+        "`/outfit UID` - صورة الأوتفيت\n"
+        "`/check UID` - فحص الحظر\n\n"
+        "مثال: `/info 123456789`",
+        parse_mode="Markdown"
+    )
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("استخدم: /info UID")
+        await update.message.reply_text("استخدم: `/info UID`", parse_mode="Markdown")
         return
     uid = context.args[0]
     params = {"uid": uid}
     task_id = await create_task(pool, "info", update.effective_user.id, update.effective_chat.id, params)
-    await update.message.reply_text(f"⏳ جاري جلب معلومات {uid}...")
+    await update.message.reply_text(f"⏳ جاري جلب معلومات `{uid}`...", parse_mode="Markdown")
     result = await wait_for_result(pool, task_id)
     await update.message.reply_text(result)
 
 async def cmd_outfit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("استخدم: /outfit UID (region اختياري)")
+        await update.message.reply_text("استخدم: `/outfit UID` (region اختياري)", parse_mode="Markdown")
         return
     uid = context.args[0]
     region = context.args[1] if len(context.args) > 1 else "me"
     params = {"uid": uid, "region": region}
     task_id = await create_task(pool, "outfit", update.effective_user.id, update.effective_chat.id, params)
-    await update.message.reply_text(f"⏳ جاري جلب الأوتفيت...")
+    await update.message.reply_text(f"⏳ جاري جلب الأوتفيت للاعب `{uid}`...", parse_mode="Markdown")
     result = await wait_for_result(pool, task_id)
     await update.message.reply_text(result)
 
 async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("استخدم: /check UID")
+        await update.message.reply_text("استخدم: `/check UID`", parse_mode="Markdown")
         return
     uid = context.args[0]
     params = {"uid": uid}
     task_id = await create_task(pool, "check", update.effective_user.id, update.effective_chat.id, params)
-    await update.message.reply_text(f"⏳ جاري فحص حظر {uid}...")
+    await update.message.reply_text(f"⏳ جاري فحص حظر `{uid}`...", parse_mode="Markdown")
     result = await wait_for_result(pool, task_id)
     await update.message.reply_text(result)
 
@@ -88,7 +104,7 @@ async def setup_webhook():
     application.add_handler(CommandHandler("check", cmd_check))
     await application.initialize()
     await application.start()
-    # احصل على اسم المضيف من متغير البيئة RENDER_EXTERNAL_URL (إذا كان موجودًا)
+    # استخدم اسم الخدمة الفعلي (يمكن ضبطه يدويًا)
     base_url = os.environ.get("RENDER_EXTERNAL_URL", "https://bot-comond-1.onrender.com")
     webhook_url = f"{base_url}/webhook"
     await application.bot.set_webhook(webhook_url)
