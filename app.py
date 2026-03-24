@@ -1,3 +1,4 @@
+import asyncio
 from flask import Flask, request
 import asyncpg
 import json
