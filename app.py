@@ -1,25 +1,20 @@
 from flask import Flask, request
-import asyncio
 import asyncpg
 import json
-import threading
-from telegram import Update, Bot
+import os
+from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-import nest_asyncio
-
-# تطبيق nest_asyncio لحل مشكلة الحلقات المتداخلة
-nest_asyncio.apply()
-
-# ===== التكوين =====
-DATABASE_URL = "postgresql://postgres:ZikoBoss200@db.zxkvqyaidsszmufykwmr.supabase.co:5432/postgres"
-COMMANDER_TOKEN = "8680331502:AAFGdzSKemmYtMtsZplXbGEQcTqijxuOv8I"
-# ===================
 
 app = Flask(__name__)
-bot = Bot(token=COMMANDER_TOKEN)
+
+DATABASE_URL = "postgresql://postgres:ZikoBoss200@db.zxkvqyaidsszmufykwmr.supabase.co:5432/postgres"
+TOKEN = "8680331502:AAFGdzSKemmYtMtsZplXbGEQcTqijxuOv8I"
+
+bot = Bot(TOKEN)
 application = None
 pool = None
 
+# دوال قاعدة البيانات (بنفس الكود السابق)
 async def get_pool():
     return await asyncpg.create_pool(DATABASE_URL)
 
@@ -41,6 +36,7 @@ async def wait_for_result(pool, task_id, timeout=60):
         await asyncio.sleep(2)
     return "⏰ انتهى وقت الانتظار."
 
+# معالجات الأوامر (نفسها)
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎮 بوت Free Fire القائد\nأرسل:\n/info UID\n/outfit UID\n/check UID")
 
@@ -78,33 +74,35 @@ async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await wait_for_result(pool, task_id)
     await update.message.reply_text(result)
 
-async def run_bot():
+# إعداد webhook
+async def setup_webhook():
     global application, pool
     pool = await get_pool()
-    application = Application.builder().token(COMMANDER_TOKEN).build()
+    application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("info", cmd_info))
     application.add_handler(CommandHandler("outfit", cmd_outfit))
     application.add_handler(CommandHandler("check", cmd_check))
-    print("🚀 البوت القائد يعمل...")
     await application.initialize()
     await application.start()
-    await application.updater.start_polling()
-    # إبقاء التشغيل مفتوحاً
-    while True:
-        await asyncio.sleep(1)
+    # تعيين webhook إلى عنوان Render الخاص بك
+    webhook_url = "https://bot-comond-1.onrender.com/webhook"
+    await application.bot.set_webhook(webhook_url)
+    print("✅ Webhook set")
 
-def start_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(run_bot())
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    asyncio.create_task(application.process_update(update))
+    return "OK"
 
 @app.route('/')
 def index():
     return "✅ Commander Bot is running"
 
 if __name__ == "__main__":
-    t = threading.Thread(target=start_bot)
-    t.daemon = True
-    t.start()
-    app.run(host='0.0.0.0', port=10000)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(setup_webhook())
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
